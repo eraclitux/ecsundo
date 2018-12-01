@@ -18,6 +18,7 @@ If something goes wrong it may take several minutes to bring a rollback commit i
 To use this tool, the deploy procedure must involve creating a new task version with a new image tag.
 A great way to tag container images is to include the commit hash of the code that they contain, doing so it will
 be possible to find the task version you want to come back to if problems arise.
+[Learn more](https://medium.com/@eraclitux/deployment-rollback-in-a-containers-world-aws-ecs-edition-4bc8e34c0d5a) about this.
 
 ## Usage examples
 
