@@ -1,5 +1,7 @@
 # ecsundo
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/eraclitux/ecsundo)](https://goreportcard.com/report/github.com/eraclitux/ecsundo)
+
 `ecsundo` is cli tool able to rollback ECS
 [services](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs_services.html)
 in a given cluster to their previous or to specific
