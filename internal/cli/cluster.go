@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 
 	"github.com/eraclitux/ecsundo/internal/platform/aws"
@@ -35,7 +36,7 @@ import (
 
 const (
 	separatorConst = ";"
-	filePathFormat = "%s/.%s.ecsundo"
+	fileSuffix     = ".ecsundo"
 )
 
 func makeClusterRunE(ecs ecsProvider) func(cmd *cobra.Command, args []string) error {
@@ -49,6 +50,7 @@ func makeClusterRunE(ecs ecsProvider) func(cmd *cobra.Command, args []string) er
 		if len(args) > 0 {
 			clusterName = args[0]
 		}
+
 		err := ecs.ClusterRollback(clusterName)
 		if err != nil {
 			return fmt.Errorf("error for %q: %s", clusterName, err)
@@ -77,7 +79,7 @@ func makeSnapshotRunE(ecs ecsProvider) func(cmd *cobra.Command, args []string) e
 			if err != nil {
 				return err
 			}
-			filePath = fmt.Sprintf(filePathFormat, home, clusterName)
+			filePath = filepath.Join(home, "."+clusterName+fileSuffix)
 		}
 		serviceVersions, err := ecs.ClusterSnapshot(clusterName)
 		if err != nil {
@@ -111,7 +113,7 @@ func makeRestoreRunE(ecs ecsProvider) func(cmd *cobra.Command, args []string) er
 			if err != nil {
 				return err
 			}
-			filePath = fmt.Sprintf(filePathFormat, home, clusterName)
+			filePath = filepath.Join(home, "."+clusterName+fileSuffix)
 		}
 		bb, err := ioutil.ReadFile(filePath)
 		if err != nil {
