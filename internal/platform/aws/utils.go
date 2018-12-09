@@ -20,7 +20,13 @@
 
 package aws
 
-import "strings"
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
 
 // nameFromARN returns resource name from an ARN in the form
 // arn:partition:service:region:account-id:resourcetype/resource
@@ -31,4 +37,28 @@ func nameFromARN(ARN string) string {
 		name = tokens[1]
 	}
 	return name
+}
+
+// getRegion tries to retrieve region from EC2 metadata.
+func getRegion(metaDataEndpoints ...string) (string, error) {
+	docEndpoint := "http://169.254.169.254/latest/dynamic/instance-identity/document"
+	if len(metaDataEndpoints) > 0 {
+		docEndpoint = metaDataEndpoints[0]
+	}
+	client := &http.Client{
+		Timeout: 1 * time.Second,
+	}
+	res, err := client.Get(docEndpoint)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	resp := struct {
+		Region string `json:"region"`
+	}{}
+	err = json.NewDecoder(res.Body).Decode(&resp)
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	return resp.Region, nil
 }

@@ -30,7 +30,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
@@ -274,6 +273,14 @@ func (es *ECSService) rollbackServices(servicesInfo []ServiceInfo, clusterName s
 
 // NewECSClient returns an implementation of cmd.ecsService.
 func NewECSClient(verbose bool) *ECSService {
+	if os.Getenv("AWS_REGION") == "" {
+		region, err := getRegion()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "unable to get AWS region from metadata")
+		} else {
+			os.Setenv("AWS_REGION", region)
+		}
+	}
 	session := session.New(
 		&aws.Config{
 			HTTPClient: &http.Client{
@@ -281,14 +288,6 @@ func NewECSClient(verbose bool) *ECSService {
 			},
 		},
 	)
-	ec2Client := ec2metadata.New(session)
-	if os.Getenv("AWS_REGION") == "" && ec2Client.Available() {
-		region, err := ec2Client.Region()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "unable to get AWS region from metadata")
-		}
-		os.Setenv("AWS_REGION", region)
-	}
 	return &ECSService{
 		verbose: verbose,
 		client:  ecs.New(session),

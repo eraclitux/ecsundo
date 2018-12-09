@@ -20,7 +20,12 @@
 
 package aws
 
-import "testing"
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func Test_nameFromARN(t *testing.T) {
 	tests := []struct {
@@ -48,5 +53,38 @@ func Test_nameFromARN(t *testing.T) {
 		if got := nameFromARN(tt.arn); got != tt.want {
 			t.Errorf("nameFromARN() = %v, want %v", got, tt.want)
 		}
+	}
+}
+
+func Test_getRegion(t *testing.T) {
+	validRegion := "us-east-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w,
+			`{
+			"availabilityZone" : "us-east-1c",
+			"devpayProductCodes" : null,
+			"marketplaceProductCodes" : null,
+			"version" : "2017-09-30",
+			"instanceId" : "i-01d91b64bee66602b",
+			"billingProducts" : null,
+			"instanceType" : "t2.micro",
+			"imageId" : "ami-40d28157",
+			"privateIp" : "172.31.60.249",
+			"accountId" : "787961527100",
+			"architecture" : "x86_64",
+			"kernelId" : null,
+			"ramdiskId" : null,
+			"pendingTime" : "2016-11-07T14:30:32Z",
+			"region" : "us-east-1"
+		  }`,
+		)
+	}))
+	defer server.Close()
+	region, err := getRegion(server.URL)
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
+	if region != validRegion {
+		t.Fatalf("got: %s, expected: %s\n", region, validRegion)
 	}
 }
