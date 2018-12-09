@@ -5,4 +5,11 @@ jobs:
       - image: circleci/golang:latest
     steps:
       - checkout
+      - restore_cache:
+          keys:
+            - v1-cache-{{ checksum "go.sum" }}
       - run: go test -v -cover ./...
+      - save_cache:
+          key: v1-cache-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
