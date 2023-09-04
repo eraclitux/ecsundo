@@ -21,17 +21,17 @@
 package aws
 
 import (
+	"context"
 	"fmt"
-	"net/http"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
 )
 
 const awsApisErrorFmt = "error on AWS request: %s"
@@ -45,7 +45,7 @@ type ServiceInfo struct {
 // ECSService implements cli.ecsProvider.
 type ECSService struct {
 	verbose bool
-	client  *ecs.ECS
+	client  *ecs.Client
 }
 
 // ServicePreviousVersion returns previous task version as ARN string.
@@ -76,23 +76,21 @@ func (es *ECSService) ServiceRollback(serviceName, clusterName, taskARN string) 
 		Service:        aws.String(serviceName),
 		TaskDefinition: aws.String(taskARN),
 	}
-	_, err := es.client.UpdateService(updateInput)
-	switch e := err.(type) {
-	case nil:
-		return nil
-	case awserr.Error:
-		if e.Message() != "TaskDefinition is inactive" {
-			return e
+	_, err := es.client.UpdateService(context.TODO(), updateInput)
+	if err != nil {
+		if err.Error() != "TaskDefinition is inactive" {
+			// return e
 		}
-	default:
-		return fmt.Errorf(awsApisErrorFmt, err)
 	}
+	// default:
+	// 	return fmt.Errorf(awsApisErrorFmt, err)
+	// }
 	// At this point task is INACTIVE, register a new one with the same
 	// configuration and update service with this.
 	describeInput := &ecs.DescribeTaskDefinitionInput{
 		TaskDefinition: aws.String(taskARN),
 	}
-	out, err := es.client.DescribeTaskDefinition(describeInput)
+	out, err := es.client.DescribeTaskDefinition(context.TODO(), describeInput)
 	if err != nil {
 		return fmt.Errorf(awsApisErrorFmt, err)
 	}
@@ -109,7 +107,7 @@ func (es *ECSService) ServiceRollback(serviceName, clusterName, taskARN string) 
 		TaskRoleArn:             taskDef.TaskRoleArn,
 		Volumes:                 taskDef.Volumes,
 	}
-	registerOut, err := es.client.RegisterTaskDefinition(registerInput)
+	registerOut, err := es.client.RegisterTaskDefinition(context.TODO(), registerInput)
 	if err != nil {
 		return fmt.Errorf(awsApisErrorFmt, err)
 	}
@@ -117,7 +115,7 @@ func (es *ECSService) ServiceRollback(serviceName, clusterName, taskARN string) 
 		fmt.Printf("%q new task definition registered with configuration from %q\n", *registerOut.TaskDefinition.TaskDefinitionArn, taskARN)
 	}
 	updateInput.TaskDefinition = registerOut.TaskDefinition.TaskDefinitionArn
-	_, err = es.client.UpdateService(updateInput)
+	_, err = es.client.UpdateService(context.TODO(), updateInput)
 	if err != nil {
 		return fmt.Errorf(awsApisErrorFmt, err)
 	}
@@ -133,7 +131,7 @@ func (es *ECSService) ClusterRollback(clusterName string) error {
 	}
 	servicesInfo := make([]ServiceInfo, 0, len(serviceARNptrs))
 	for _, serviceARNptr := range serviceARNptrs {
-		servicesInfo = append(servicesInfo, ServiceInfo{ARN: *serviceARNptr, TaskARN: ""})
+		servicesInfo = append(servicesInfo, ServiceInfo{ARN: serviceARNptr, TaskARN: ""})
 	}
 	return es.rollbackServices(servicesInfo, clusterName)
 }
@@ -155,7 +153,7 @@ func (es *ECSService) ClusterSnapshot(clusterName string) ([]ServiceInfo, error)
 				return
 			}
 			resultsCh <- ServiceInfo{ARN: serviceARN, TaskARN: taskARN}
-		}(*serviceARNptr)
+		}(serviceARNptr)
 	}
 	l := len(serviceARNptrs)
 	servicesInfo := make([]ServiceInfo, 0, l)
@@ -178,18 +176,18 @@ func (es *ECSService) ClusterRestore(serviceSnapshots []ServiceInfo, clusterName
 	return es.rollbackServices(serviceSnapshots, clusterName)
 }
 
-func (es *ECSService) listServices(clusterName string) ([]*string, error) {
+func (es *ECSService) listServices(clusterName string) ([]string, error) {
 	listInput := &ecs.ListServicesInput{
 		Cluster: aws.String(clusterName),
 	}
-	listOut, err := es.client.ListServices(listInput)
+	listOut, err := es.client.ListServices(context.TODO(), listInput)
 	if err != nil {
 		return nil, err
 	}
 	serviceARNs := listOut.ServiceArns
 	for listOut.NextToken != nil {
 		listInput.NextToken = listOut.NextToken
-		listOut, err = es.client.ListServices(listInput)
+		listOut, err = es.client.ListServices(context.TODO(), listInput)
 		if err != nil {
 			return nil, err
 		}
@@ -201,11 +199,11 @@ func (es *ECSService) listServices(clusterName string) ([]*string, error) {
 func (es *ECSService) getCurrentTask(serviceName, clusterName string) (string, error) {
 	input := &ecs.DescribeServicesInput{
 		Cluster: aws.String(clusterName),
-		Services: []*string{
-			aws.String(serviceName),
+		Services: []string{
+			serviceName,
 		},
 	}
-	result, err := es.client.DescribeServices(input)
+	result, err := es.client.DescribeServices(context.TODO(), input)
 	if err != nil {
 		return "", err
 	}
@@ -281,15 +279,18 @@ func NewECSClient(verbose bool) *ECSService {
 			os.Setenv("AWS_REGION", region)
 		}
 	}
-	session := session.New(
-		&aws.Config{
-			HTTPClient: &http.Client{
-				Timeout: time.Second * 20,
-			},
-		},
-	)
+	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Fatalf("unable to load SDK config, %v", err.Error())
+	}
+	// create a new context from the previous ctx with a timeout, e.g. 5 seconds
+
 	return &ECSService{
 		verbose: verbose,
-		client:  ecs.New(session),
+		client:  ecs.NewFromConfig(cfg),
 	}
 }
